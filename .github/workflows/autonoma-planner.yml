@@ -1,0 +1,93 @@
+name: Autonoma Planner · mall full scan
+
+on:
+  workflow_dispatch:
+    inputs:
+      fresh:
+        description: "Discard previous planner progress (--fresh)"
+        type: boolean
+        default: false
+      coding_agent:
+        description: "Coding agent for preview/SDK steps (claude|codex|none)"
+        required: true
+        default: "none"
+
+concurrency:
+  group: autonoma-planner-mall
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Scan mall with Planner
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Show tree
+        run: |
+          du -sh mall mall-admin-web || true
+          test -d mall/mall-admin
+          test -f mall-admin-web/package.json
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Require Autonoma secrets
+        env:
+          AUTONOMA_API_TOKEN: ${{ secrets.AUTONOMA_API_TOKEN }}
+          AUTONOMA_APPLICATION_ID: ${{ secrets.AUTONOMA_APPLICATION_ID }}
+          AUTONOMA_GENERATION_ID: ${{ secrets.AUTONOMA_GENERATION_ID }}
+        run: |
+          missing=0
+          for k in AUTONOMA_API_TOKEN AUTONOMA_APPLICATION_ID AUTONOMA_GENERATION_ID; do
+            if [ -z "${!k}" ]; then
+              echo "::error::缺少 Secret: $k"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Run Autonoma Planner (non-interactive)
+        env:
+          AUTONOMA_API_TOKEN: ${{ secrets.AUTONOMA_API_TOKEN }}
+          AUTONOMA_APPLICATION_ID: ${{ secrets.AUTONOMA_APPLICATION_ID }}
+          AUTONOMA_GENERATION_ID: ${{ secrets.AUTONOMA_GENERATION_ID }}
+          AUTONOMA_SHARED_SECRET: ${{ secrets.AUTONOMA_SHARED_SECRET }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CI: true
+          FRESH: ${{ inputs.fresh }}
+          CODING_AGENT: ${{ inputs.coding_agent }}
+        run: |
+          set -euxo pipefail
+          FRESH_FLAG=""
+          if [ "$FRESH" = "true" ]; then FRESH_FLAG="--fresh"; fi
+          if [ "$CODING_AGENT" = "none" ]; then
+            npx --yes @autonoma-ai/planner@latest --non-interactive \
+              --frontend mall-admin-web \
+              --backend mall \
+              $FRESH_FLAG
+            npx --yes @autonoma-ai/planner@latest upload || true
+            npx --yes @autonoma-ai/planner@latest status || true
+          else
+            npx --yes @autonoma-ai/planner@latest --non-interactive \
+              --coding-agent "$CODING_AGENT" \
+              --frontend mall-admin-web \
+              --backend mall \
+              --permission-mode bypassPermissions \
+              $FRESH_FLAG
+          fi
+
+      - name: Upload planner artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: autonoma-artifacts-${{ github.run_id }}
+          path: /home/runner/.autonoma/**
+          if-no-files-found: warn
+          retention-days: 14
