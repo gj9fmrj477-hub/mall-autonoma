@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       fresh:
-        description: "Discard previous planner progress (--fresh). Uncheck to --resume from last artifact."
+        description: "Discard previous planner progress (--fresh). Uncheck to resume from last artifact."
         type: boolean
         default: false
       coding_agent:
@@ -12,7 +12,7 @@ on:
         required: true
         default: "none"
       model:
-        description: "Optional model id. Leave EMPTY for Autonoma default (recommended)."
+        description: "Optional model id. Leave EMPTY to use Autonoma default (recommended)."
         required: false
         default: ""
 
@@ -62,32 +62,24 @@ jobs:
           echo "DISTINCT_ID prefix=${AUTONOMA_DISTINCT_ID:0:6}..."
           exit "$missing"
 
-      - name: Restore previous planner state
+      - name: Restore planner state from last artifact
         if: ${{ inputs.fresh != true }}
-        uses: actions/download-artifact@v4
+        uses: dawidd6/action-download-artifact@v6
         continue-on-error: true
         with:
-          pattern: autonoma-state-*
-          merge-multiple: true
-          path: /home/runner/.autonoma-restore
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          workflow: autonoma-planner.yml
+          workflow_conclusion: ""
+          name: autonoma-planner-state
+          path: /home/runner/.autonoma
+          search_artifacts: true
+          if_no_artifact_found: warn
 
-      - name: Unpack restored state
+      - name: Show restored state
         if: ${{ inputs.fresh != true }}
         run: |
-          set -euxo pipefail
-          if [ -d /home/runner/.autonoma-restore ] && [ "$(ls -A /home/runner/.autonoma-restore 2>/dev/null | wc -l)" -gt 0 ]; then
-            mkdir -p /home/runner/.autonoma
-            # artifact may contain nested .autonoma or flat files
-            if [ -d /home/runner/.autonoma-restore/.autonoma ]; then
-              cp -a /home/runner/.autonoma-restore/.autonoma/. /home/runner/.autonoma/
-            else
-              cp -a /home/runner/.autonoma-restore/. /home/runner/.autonoma/
-            fi
-            echo "Restored state:"
-            find /home/runner/.autonoma -maxdepth 3 -type f | head -50
-          else
-            echo "No previous state artifact found; will start/continue with cloud generation id only."
-          fi
+          ls -la /home/runner/.autonoma 2>/dev/null || echo "no state yet"
+          find /home/runner/.autonoma -maxdepth 3 -type f 2>/dev/null | head -50 || true
 
       - name: Run Autonoma Planner (non-interactive)
         env:
@@ -111,6 +103,7 @@ jobs:
           else
             EXTRA+=(--resume)
           fi
+          # Only pass --model when non-empty; empty = Autonoma default
           if [ -n "${MODEL:-}" ]; then
             EXTRA+=(--model "$MODEL")
           fi
@@ -131,15 +124,11 @@ jobs:
               "${EXTRA[@]}"
           fi
 
-          echo "State after run:"
-          find /home/runner/.autonoma -maxdepth 3 -type f 2>/dev/null | head -80 || true
-          du -sh /home/runner/.autonoma 2>/dev/null || true
-
-      - name: Upload planner state (including hidden dirs)
+      - name: Upload planner state (for resume)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: autonoma-state-${{ github.run_id }}
+          name: autonoma-planner-state
           path: /home/runner/.autonoma
           if-no-files-found: warn
           retention-days: 14
