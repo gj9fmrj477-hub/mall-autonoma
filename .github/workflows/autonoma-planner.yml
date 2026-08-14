@@ -4,13 +4,17 @@ on:
   workflow_dispatch:
     inputs:
       fresh:
-        description: "Discard previous planner progress (--fresh)"
+        description: "Discard previous planner progress (--fresh). Uncheck to --resume."
         type: boolean
         default: false
       coding_agent:
         description: "Coding agent for preview/SDK steps (claude|codex|none)"
         required: true
         default: "none"
+      model:
+        description: "Optional model id (empty = Autonoma default). Example: openai/gpt-4o-mini"
+        required: false
+        default: "openai/gpt-4o-mini"
 
 concurrency:
   group: autonoma-planner-mall
@@ -70,15 +74,24 @@ jobs:
           CI: true
           FRESH: ${{ inputs.fresh }}
           CODING_AGENT: ${{ inputs.coding_agent }}
+          MODEL: ${{ inputs.model }}
         run: |
           set -euxo pipefail
-          FRESH_FLAG=""
-          if [ "$FRESH" = "true" ]; then FRESH_FLAG="--fresh"; fi
+          EXTRA=()
+          if [ "$FRESH" = "true" ]; then
+            EXTRA+=(--fresh)
+          else
+            EXTRA+=(--resume)
+          fi
+          if [ -n "${MODEL:-}" ]; then
+            EXTRA+=(--model "$MODEL")
+          fi
+
           if [ "$CODING_AGENT" = "none" ]; then
             npx --yes @autonoma-ai/planner@latest --non-interactive \
               --frontend mall-admin-web \
               --backend mall \
-              $FRESH_FLAG
+              "${EXTRA[@]}"
             npx --yes @autonoma-ai/planner@latest upload || true
             npx --yes @autonoma-ai/planner@latest status || true
           else
@@ -87,7 +100,7 @@ jobs:
               --frontend mall-admin-web \
               --backend mall \
               --permission-mode bypassPermissions \
-              $FRESH_FLAG
+              "${EXTRA[@]}"
           fi
 
       - name: Upload planner artifacts
