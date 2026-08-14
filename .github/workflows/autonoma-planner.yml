@@ -43,22 +43,29 @@ jobs:
           AUTONOMA_API_TOKEN: ${{ secrets.AUTONOMA_API_TOKEN }}
           AUTONOMA_APPLICATION_ID: ${{ secrets.AUTONOMA_APPLICATION_ID }}
           AUTONOMA_GENERATION_ID: ${{ secrets.AUTONOMA_GENERATION_ID }}
+          AUTONOMA_SHARED_SECRET: ${{ secrets.AUTONOMA_SHARED_SECRET }}
+          AUTONOMA_DISTINCT_ID: ${{ secrets.AUTONOMA_DISTINCT_ID }}
         run: |
           missing=0
-          for k in AUTONOMA_API_TOKEN AUTONOMA_APPLICATION_ID AUTONOMA_GENERATION_ID; do
+          for k in AUTONOMA_API_TOKEN AUTONOMA_APPLICATION_ID AUTONOMA_GENERATION_ID AUTONOMA_SHARED_SECRET AUTONOMA_DISTINCT_ID; do
             if [ -z "${!k}" ]; then
               echo "::error::缺少 Secret: $k"
               missing=1
             fi
           done
+          echo "APPLICATION_ID prefix=${AUTONOMA_APPLICATION_ID:0:8}..."
+          echo "GENERATION_ID prefix=${AUTONOMA_GENERATION_ID:0:8}..."
+          echo "DISTINCT_ID prefix=${AUTONOMA_DISTINCT_ID:0:6}..."
           exit "$missing"
 
       - name: Run Autonoma Planner (non-interactive)
         env:
+          AUTONOMA_API_URL: https://api.autonoma.app
           AUTONOMA_API_TOKEN: ${{ secrets.AUTONOMA_API_TOKEN }}
           AUTONOMA_APPLICATION_ID: ${{ secrets.AUTONOMA_APPLICATION_ID }}
           AUTONOMA_GENERATION_ID: ${{ secrets.AUTONOMA_GENERATION_ID }}
           AUTONOMA_SHARED_SECRET: ${{ secrets.AUTONOMA_SHARED_SECRET }}
+          AUTONOMA_DISTINCT_ID: ${{ secrets.AUTONOMA_DISTINCT_ID }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           CI: true
           FRESH: ${{ inputs.fresh }}
